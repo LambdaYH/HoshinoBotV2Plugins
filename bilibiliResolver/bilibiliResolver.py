@@ -26,7 +26,7 @@ pattern = re.compile(
 
 
 @cached(ttl=10)
-async def get_linkSet():
+async def get_linkSet(group_id):
     linkSet = set()
     return linkSet
 
@@ -101,7 +101,7 @@ async def bilibiliResolver(bot, ev: CQEvent):
 
     if urlList != []:
         urlList = list(set(urlList))  #Initially delete repeated links
-        linkSet = await get_linkSet()  #avoid repeated link
+        linkSet = await get_linkSet(ev.group_id)  #avoid repeated link
         for url in urlList:
             if url.startswith("https://b23.tv") or url.startswith(
                     "https://www.bilibili.com/video/") or url.startswith(
