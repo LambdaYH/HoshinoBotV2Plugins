@@ -3,6 +3,7 @@ import re
 import html
 import requests
 from bs4 import BeautifulSoup
+from aiocache import cached
 from nonebot import MessageSegment as ms
 from hoshino import util, Service, priv
 from hoshino.typing import CQEvent, CQHttpError, Message
@@ -24,7 +25,14 @@ pattern = re.compile(
 )
 
 
+@cached(ttl=10)
+async def get_linkSet():
+    linkSet = set()
+    return linkSet
+
+
 #transfer b23.tv to bilibili.com
+@cached(ttl=12 * 60 * 60)
 async def getUrl(url):
     res = requests.get(url, timeout=15)
     url = res.url
@@ -93,7 +101,7 @@ async def bilibiliResolver(bot, ev: CQEvent):
 
     if urlList != []:
         urlList = list(set(urlList))  #Initially delete repeated links
-        linkSet = set()  #avoid repeated link
+        linkSet = await get_linkSet()  #avoid repeated link
         for url in urlList:
             if url.startswith("https://b23.tv") or url.startswith(
                     "https://www.bilibili.com/video/") or url.startswith(
