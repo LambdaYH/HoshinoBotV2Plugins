@@ -32,14 +32,15 @@ async def get_linkSet(group_id):
 
 
 #transfer b23.tv to bilibili.com
-@cached(ttl=12 * 60 * 60)
+@cached(ttl=60)
 async def getUrl(url):
     res = requests.get(url, timeout=15)
     url = res.url
     return url
 
 
-async def getBilibiliVideoDetail(resultUrl, linkSet):
+@cached(ttl=60)
+async def getBilibiliVideoDetail(resultUrl):
     contents = requests.get(resultUrl, headers=headers, timeout=15).text
     soup = BeautifulSoup(contents, "lxml")
     title = html.unescape(
@@ -59,18 +60,15 @@ async def getBilibiliVideoDetail(resultUrl, linkSet):
             attrs={"itemprop": "url"})['content'][:-1] + part.group()
     else:
         link = soup.find(attrs={"itemprop": "url"})['content']
-    if link not in linkSet:
-        linkSet.add(link)
-        msg = [
-            f"[标题]{title}", f"[作者]{auther}", f"[简介]{description}",
-            f"[封面]{ms.image(imgUrl)}", f"URL:{link}"
-        ]
-    else:
-        msg = None
-    return msg
+    msg = [
+        f"[标题]{title}", f"[作者]{auther}", f"[简介]{description}",
+        f"[封面]{ms.image(imgUrl)}", f"URL:{link}"
+    ]
+    return msg, link
 
 
-async def getBilibiliBangumiDetail(resultUrl, linkSet):
+@cached(ttl=60)
+async def getBilibiliBangumiDetail(resultUrl):
     contents = requests.get(resultUrl, headers=headers, timeout=15).text
     soup = BeautifulSoup(contents, "lxml")
     title = html.unescape(soup.title.string.replace(
@@ -80,15 +78,11 @@ async def getBilibiliBangumiDetail(resultUrl, linkSet):
     ep = re.search(r'(ss|ep)\d+', resultUrl).group()
     link = re.sub(r'(ss|ep)\d+', ep,
                   soup.find(attrs={"property": "og:url"})['content'])
-    if link not in linkSet:
-        linkSet.add(link)
-        msg = [
-            f"[标题]{title}", f"[简介]{description}", f"[封面]{ms.image(imgUrl)}",
-            f"URL:{link}"
-        ]
-    else:
-        msg = None
-    return msg
+    msg = [
+        f"[标题]{title}", f"[简介]{description}", f"[封面]{ms.image(imgUrl)}",
+        f"URL:{link}"
+    ]
+    return msg, link
 
 
 @sv.on_message()
@@ -108,15 +102,19 @@ async def bilibiliResolver(bot, ev: CQEvent):
                         "http://www.bilibili.com/video/"):
                 try:
                     try:
-                        msg = await getBilibiliVideoDetail(url, linkSet)
+                        msg, link = await getBilibiliVideoDetail(url)
+                        msg = msg if link not in linkSet else None
+                        linkSet.add(link)
                     except:
-                        msg = await getBilibiliBangumiDetail(url, linkSet)
+                        msg, link = await getBilibiliBangumiDetail(url)
+                        msg = msg if link not in linkSet else None
+                        linkSet.add(link)
 
                     try:
                         if msg != None:
                             await bot.send(ev, '\n'.join(msg))
                     except CQHttpError:
-                        sv.logger.error(f"链接内容解析失败消息无法发送")
+                        sv.logger.error(f"解析消息发送失败")
                         try:
                             await bot.send(ev, "链接内容解析失败", at_sender=True)
                         except:
@@ -135,15 +133,19 @@ async def bilibiliResolver(bot, ev: CQEvent):
                         "http://www.bilibili.com/bangumi/"):
                 try:
                     try:
-                        msg = await getBilibiliBangumiDetail(url, linkSet)
+                        msg, link = await getBilibiliBangumiDetail(url)
+                        msg = msg if link not in linkSet else None
+                        linkSet.add(link)
                     except:
-                        msg = await getBilibiliVideoDetail(url, linkSet)
+                        msg, link = await getBilibiliVideoDetail(url)
+                        msg = msg if link not in linkSet else None
+                        linkSet.add(link)
 
                     try:
                         if msg != None:
                             await bot.send(ev, '\n'.join(msg))
                     except CQHttpError:
-                        sv.logger.error(f"链接内容解析失败消息无法发送")
+                        sv.logger.error(f"解析消息发送失败")
                         try:
                             await bot.send(ev, "链接内容解析失败", at_sender=True)
                         except:
