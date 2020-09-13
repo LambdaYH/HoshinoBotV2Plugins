@@ -10,3 +10,5 @@ List:<br>
   > nuannuan plugins for ff14
 - [translate](https://github.com/LambdaYH/HoshinoBotV2Plugins/tree/master/translate)
   > the translate plugin use googletrans instead of sougo
+- [suoxie](https://github.com/LambdaYH/HoshinoBotV2Plugins/tree/master/suoxie)
+  > Semi-finished products, powered by [nbnhhsh](https://github.com/itorr/nbnhhsh)
