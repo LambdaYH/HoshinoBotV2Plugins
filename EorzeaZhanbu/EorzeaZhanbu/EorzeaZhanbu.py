@@ -24,24 +24,24 @@ async def getZhanbuResult(ev_user_id):
 
     random.seed(datetime.now().strftime('%m') + str(ev_user_id) +
                 datetime.now().strftime('%d%Y'))
-    luckOccupation = occupation[random.randint(0, len(occupation) - 1)]
+    luckOccupation = random.choice(occupation)
 
     random.seed(datetime.now().strftime('%Y') + str(ev_user_id) +
                 datetime.now().strftime('%d%m'))
-    luckDye = dye[random.randint(0, len(dye) - 1)]
+    luckDye = random.choice(dye)
 
     random.seed(datetime.now().strftime('%d%m%Y') + str(ev_user_id) +
                 datetime.now().strftime('%Y%m%d'))
-    luckYi = event[random.randint(0, len(event) - 1)]
+    luckYi = random.choice(event)
 
     random.seed(datetime.now().strftime('%d%m%Y') +
                 datetime.now().strftime('%Y%m%d') + str(ev_user_id))
-    luckJi = event[random.randint(0, len(event) - 1)]
+    luckJi = random.choice(event)
     repeatCount = 0
     while luckYi == luckJi:
         random.seed(datetime.now().strftime('%d%m%Y') + str(repeatCount) +
                     datetime.now().strftime('%Y%m%d') + str(ev_user_id))
-        luckJi = event[random.randint(0, len(event) - 1)]
+        luckJi = random.choice(event)
         repeatCount += 1
     appendMsg = ''
     if (luck > 94):
