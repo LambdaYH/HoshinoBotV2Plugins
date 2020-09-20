@@ -1,7 +1,8 @@
 # -*- coding:utf-8 -*-
+import os
 import json
 import sqlite3
-
+os.chdir("./hoshino/modules/weather/")
 DB_FILE = "ff14weather.db"
 conn = sqlite3.connect(DB_FILE)
 c = conn.cursor()

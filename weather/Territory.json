@@ -14,7 +14,7 @@
         "pk": 2,
         "fields": {
             "name": "利姆萨·罗敏萨下层甲板",
-            "nickname": "[海都]",
+            "nickname": "海都",
             "weather_rate": 15,
             "mapid": 12
         }

@@ -1,23 +1,19 @@
-import logging
 import json
-import random
 import traceback
 import time
 import sqlite3
-import re
-import urllib
-
-conn = sqlite3.connect(r'ff14weather.db')
-cursor = conn.cursor()
 
 TIMEFORMAT_MDHMS = f"%m-%d %H:%M:%S"
 TIMEFORMAT= f"%Y-%m-%d %H:%M:%S"
 
-def getEorzeaHour(unixSeconds):
+DB_PATH = "/root/HoshinoBot/hoshino/modules/weather/ff14weather.db"
+
+
+async def getEorzeaHour(unixSeconds):
     bell = (unixSeconds / 175) % 24
     return int(bell)
 
-def calculateForecastTarget(unixSeconds):
+async def calculateForecastTarget(unixSeconds):
     # Thanks to Rogueadyn's SaintCoinach library for this calculation.
     # lDate is the current local time.
     # Get Eorzea hour for weather start
@@ -37,7 +33,7 @@ def calculateForecastTarget(unixSeconds):
 
     return step2 % 100
 
-def getWeatherTimeFloor(unixSeconds):
+async def getWeatherTimeFloor(unixSeconds):
     # Get Eorzea hour for weather start
     bell = (unixSeconds / 175) % 24
     startBell = bell - (bell % 8)
@@ -45,65 +41,81 @@ def getWeatherTimeFloor(unixSeconds):
     return startUnixSeconds
 
 
-def getWeatherID(chance, rateID):
+async def getWeatherID(chance, rateID):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
     sql = f"select rate from weatherRate where rateID='{rateID}'"
     try:
         results = cursor.execute(sql)
         rateList = results.fetchall()
-        if rateList==[]:
-            raise NameError        
-        for item in rateList:
-            weather_rate = item[0]
+        if rateList!=[]:
+            for item in rateList:
+                weather_rate = item[0]
+        else:
+            raise NameError  
     except NameError:
         return -1
     lrate = 0
     for (weather_id, rate) in json.loads(weather_rate):
         if lrate <= chance < lrate + rate:
             return weather_id
+        lrate += rate
     return -1
 
 
-def getFollowingWeathers(rateID, cnt=5, TIMEFORMAT="%m-%d %H:%M:%S", **kwargs):
+async def getFollowingWeathers(rateID, cnt=5, TIMEFORMAT="%m-%d %H:%M:%S", **kwargs):
     unixSeconds = kwargs.get("unixSeconds", int(time.time()))
-    weatherStartTime = getWeatherTimeFloor(unixSeconds)
+    weatherStartTime = await getWeatherTimeFloor(unixSeconds)
     now_time = weatherStartTime
     weathers = []
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
     for i in range(cnt):
-        chance = calculateForecastTarget(now_time)
-        weather_id = getWeatherID(chance,rateID)
-        pre_chance = calculateForecastTarget(now_time - 8 * 175)
-        pre_weather_id = getWeatherID(pre_chance, rateID)
+        chance = await calculateForecastTarget(now_time)
+        weather_id = await getWeatherID(chance,rateID)
+        pre_chance = await calculateForecastTarget(now_time - 8 * 175)
+        pre_weather_id = await getWeatherID(pre_chance, rateID)
         # print("weather_id:{}".format(weather_id))
         try:
             sql = f"select name from weather where weatherID='{weather_id}'"
             results = cursor.execute(sql)
             weatherList = results.fetchall()
-            for item in weatherList:
-                weather = item[0]
+            print(weatherList)
+            if weatherList!=[]:
+                for item in weatherList:
+                    weather = item[0]
+            else:
+                weather = None
+                raise NameError
         except NameError:
-            pass
+            raise
 
         try:
             sql = f"select name from weather where weatherID='{pre_weather_id}'"
             results = cursor.execute(sql)
             weatherList = results.fetchall()
-            for item in weatherList:
-                pre_weather = item[0]
+            if weatherList!=[]:
+                for item in weatherList:
+                    pre_weather = item[0]
+            else:
+                pre_weather=None
+                raise NameError
         except NameError:
-            raise NameError
-
+            raise
         weathers.append(
             {
                 "pre_name": f"{pre_weather}",
                 "name": f"{weather}",
-                "ET": f"{getEorzeaHour(now_time)}:00",
+                "ET": f"{await getEorzeaHour(now_time)}:00",
                 "LT": f"{time.strftime(TIMEFORMAT, time.localtime(now_time))}",
             }
         )
         now_time += 8 * 175
     return weathers
 
-def get_ff14weather(territory_name):
+async def get_ff14weather(territory_name):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
     sql = f"select name, nickname, weather_rate, mapid from territory where name='{territory_name}' or nickname='{territory_name}'"
     try:
         results = cursor.execute(sql)
@@ -114,19 +126,15 @@ def get_ff14weather(territory_name):
             territory = item[0]
             rateID = item[2]
     except NameError:
-        msg = "找不到所查询区域：{}".format(territory)
-    weathers = getFollowingWeathers(
+        raise
+    weathers = await getFollowingWeathers(
         rateID, 5, TIMEFORMAT_MDHMS, unixSeconds = time.time()
     )
-    msg = f"接下来{territory}的天气情况如下："
+    msg = f"接下来{territory}的天气预报如下："
     for item in weathers:
         msg += "\n{} ET:{}\tLT:{}".format(
             "{}->{}".format(item["pre_name"], item["name"]),
             item["ET"],
             item["LT"],
         )
-
     return msg
-
-if __name__ == "__main__":
-    print(get_ff14weather("格里达尼亚旧街"))
