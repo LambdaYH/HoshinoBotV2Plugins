@@ -1,11 +1,10 @@
 # -*- coding: utf-8 -*-
 import re
 import html
-import requests
 from bs4 import BeautifulSoup
 from aiocache import cached
 from nonebot import MessageSegment as ms
-from hoshino import util, Service, priv
+from hoshino import util, Service, priv, aiorequests
 from hoshino.typing import CQEvent, CQHttpError, Message
 
 sv = Service('bilibiliResolver',
@@ -24,6 +23,8 @@ pattern = re.compile(
     r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
 )
 
+video_keywords = ('https://b23.tv','https://www.bilibili.com/video','http://www.bilibili.com/video')
+bangumi_keywords = ('https://www.bilibili.com/bangumi','http://www.bilibili.com/bangumi')
 
 @cached(ttl=10)
 async def get_linkSet(group_id):
@@ -34,15 +35,14 @@ async def get_linkSet(group_id):
 #transfer b23.tv to bilibili.com
 @cached(ttl=60)
 async def getUrl(url):
-    res = requests.get(url, timeout=15)
-    url = res.url
-    return url
+    res = await aiorequests.get(url, timeout=15)
+    return res.url
 
 
 @cached(ttl=60)
 async def getBilibiliVideoDetail(resultUrl):
-    contents = requests.get(resultUrl, headers=headers, timeout=15).text
-    soup = BeautifulSoup(contents, "lxml")
+    contents = await aiorequests.get(resultUrl, headers=headers, timeout=15)
+    soup = BeautifulSoup((await contents.text), "lxml")
     title = html.unescape(
         soup.find(attrs={"name": "title"})['content']).replace(
             "_哔哩哔哩 (゜-゜)つロ 干杯~-bilibili", "")
@@ -69,8 +69,8 @@ async def getBilibiliVideoDetail(resultUrl):
 
 @cached(ttl=60)
 async def getBilibiliBangumiDetail(resultUrl):
-    contents = requests.get(resultUrl, headers=headers, timeout=15).text
-    soup = BeautifulSoup(contents, "lxml")
+    contents = await aiorequests.get(resultUrl, headers=headers, timeout=15)
+    soup = BeautifulSoup((await contents.text), "lxml")
     title = html.unescape(soup.title.string.replace(
         "_bilibili_哔哩哔哩", "")).replace("_", "[") + "]"
     description = html.unescape(soup.find('span', class_="absolute").text)
@@ -97,9 +97,7 @@ async def bilibiliResolver(bot, ev: CQEvent):
         urlList = list(set(urlList))  #Initially delete repeated links
         linkSet = await get_linkSet(ev.group_id)  #avoid repeated link
         for url in urlList:
-            if url.startswith("https://b23.tv") or url.startswith(
-                    "https://www.bilibili.com/video/") or url.startswith(
-                        "http://www.bilibili.com/video/"):
+            if url.startswith(video_keywords):
                 try:
                     try:
                         msg, link = await getBilibiliVideoDetail(url)
@@ -116,7 +114,9 @@ async def bilibiliResolver(bot, ev: CQEvent):
                     except CQHttpError:
                         sv.logger.error(f"解析消息发送失败")
                         try:
-                            await bot.send(ev, "链接内容解析失败", at_sender=True)
+                            await bot.send(ev,
+                                           "由于风控等原因链接解析结果无法发送",
+                                           at_sender=True)
                         except:
                             pass
                 except:
@@ -128,9 +128,7 @@ async def bilibiliResolver(bot, ev: CQEvent):
                             await bot.send(ev, "链接内容解析失败", at_sender=True)
                         except:
                             pass
-            if url.startswith(
-                    "https://www.bilibili.com/bangumi/") or url.startswith(
-                        "http://www.bilibili.com/bangumi/"):
+            elif url.startswith(bangumi_keywords):
                 try:
                     try:
                         msg, link = await getBilibiliBangumiDetail(url)
@@ -147,7 +145,9 @@ async def bilibiliResolver(bot, ev: CQEvent):
                     except CQHttpError:
                         sv.logger.error(f"解析消息发送失败")
                         try:
-                            await bot.send(ev, "链接内容解析失败", at_sender=True)
+                            await bot.send(ev,
+                                           "由于风控等原因链接解析结果无法发送",
+                                           at_sender=True)
                         except:
                             pass
                 except:
