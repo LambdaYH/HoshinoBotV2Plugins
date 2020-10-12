@@ -1,7 +1,6 @@
-import requests
-import json
 from hoshino.typing import CQEvent, MessageSegment
-from hoshino import Service, priv
+from hoshino import Service, priv, aiorequests
+import ujson
 
 headers = {
     "content-type":
@@ -31,8 +30,8 @@ async def nbnhhsh(bot, ev: CQEvent):
     body = {
         "text": sx_origin,
     }
-    r = requests.post(url, data=json.dumps(body), headers=headers, timeout=15)
-    r_json = json.loads(r.text)
+    r = await aiorequests.post(url, json=body, headers=headers, timeout=15)
+    r_json = ujson.loads((await r.text))
     suoxieList = r_json[0]
     try:
         msg = f"{sx_origin}可能是" + str(suoxieList['trans']).replace("'",
