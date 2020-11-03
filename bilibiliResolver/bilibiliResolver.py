@@ -10,9 +10,7 @@ from hoshino.typing import CQEvent, CQHttpError, Message
 sv = Service('bilibiliResolver',
              manage_priv=priv.ADMIN,
              enable_on_default=True,
-             visible=True,
-             help_='解析bilibili',
-             bundle='通用')
+             visible=False)
 
 headers = {
     'user-agent':
@@ -23,10 +21,18 @@ pattern = re.compile(
     r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
 )
 
-video_keywords = ('https://b23.tv','https://www.bilibili.com/video','http://www.bilibili.com/video')
-bangumi_keywords = ('https://www.bilibili.com/bangumi','http://www.bilibili.com/bangumi')
+aid_pattern = re.compile(r'(av|AV)\d+')
 
-@cached(ttl=10)
+bvid_pattern = re.compile(r'(BV|bv)\w+')
+
+video_keywords = ('https://b23.tv', 'https://www.bilibili.com/video',
+                  'http://www.bilibili.com/video')
+bangumi_keywords = ('https://www.bilibili.com/bangumi',
+                    'http://www.bilibili.com/bangumi')
+live_keywords = ('https://live.bilibili.com', 'http://live.bilibili.com')
+
+
+@cached(ttl=12)
 async def get_linkSet(group_id):
     linkSet = set()
     return linkSet
@@ -85,6 +91,21 @@ async def getBilibiliBangumiDetail(resultUrl):
     return msg, link
 
 
+@cached(ttl=60)
+async def getLiveSummary(resultUrl):
+    contents = await aiorequests.get(resultUrl, headers=headers, timeout=15)
+    soup = BeautifulSoup((await contents.text), "lxml")
+    summarys = str(html.unescape(soup.find(
+        'title', id="link-app-title").text)).split("-")[:2]
+    title = summarys[0].strip()
+    up = summarys[1].strip()
+    link = re.search(r'(https|http)://live.bilibili.com/\d+', resultUrl)
+    if link:
+        link = link.group()
+    msg = [f"[直播间]", f"[标题]{title}", f"[up]{up}", f"URL:{link}"]
+    return msg, link
+
+
 @sv.on_message()
 async def bilibiliResolver(bot, ev: CQEvent):
     msg = str(ev.message)
@@ -92,6 +113,14 @@ async def bilibiliResolver(bot, ev: CQEvent):
         urlList = re.findall(pattern, msg.replace("\\", ''))
     except:
         urlList = []
+
+    if urlList == []:
+        aid = re.search(aid_pattern, msg)
+        bvid = re.search(bvid_pattern, msg)
+        if aid:
+            urlList.append(f"https://www.bilibili.com/video/{aid.group()}")
+        if bvid:
+            urlList.append(f"https://www.bilibili.com/video/{bvid.group()}")
 
     if urlList != []:
         urlList = list(set(urlList))  #Initially delete repeated links
@@ -121,11 +150,13 @@ async def bilibiliResolver(bot, ev: CQEvent):
                             pass
                 except:
                     try:
-                        await bot.send(ev, "链接内容解析失败", at_sender=True)
+                        await bot.send(ev, "链接/av号/bv号内容解析失败", at_sender=True)
                     except CQHttpError:
-                        sv.logger.error(f"链接内容解析失败消息无法发送")
+                        sv.logger.error(f"链接/av号/bv号内容解析失败消息无法发送")
                         try:
-                            await bot.send(ev, "链接内容解析失败", at_sender=True)
+                            await bot.send(ev,
+                                           "链接/av号/bv号内容解析失败",
+                                           at_sender=True)
                         except:
                             pass
             elif url.startswith(bangumi_keywords):
@@ -152,10 +183,38 @@ async def bilibiliResolver(bot, ev: CQEvent):
                             pass
                 except:
                     try:
-                        await bot.send(ev, "链接内容解析失败", at_sender=True)
+                        await bot.send(ev, "链接/av号/bv号内容解析失败", at_sender=True)
                     except CQHttpError:
-                        sv.logger.error(f"链接内容解析失败消息无法发送")
+                        sv.logger.error(f"链接/av号/bv号内容解析失败消息无法发送")
                         try:
-                            await bot.send(ev, "链接内容解析失败", at_sender=True)
+                            await bot.send(ev,
+                                           "链接/av号/bv号内容解析失败",
+                                           at_sender=True)
+                        except:
+                            pass
+            elif url.startswith(live_keywords):
+                try:
+                    msg, link = await getLiveSummary(url)
+                    msg = msg if link not in linkSet else None
+                    linkSet.add(link)
+
+                    try:
+                        if msg != None:
+                            await bot.send(ev, '\n'.join(msg))
+                    except CQHttpError:
+                        sv.logger.error(f"解析消息发送失败")
+                        try:
+                            await bot.send(ev,
+                                           "由于风控等原因链接解析结果无法发送",
+                                           at_sender=True)
+                        except:
+                            pass
+                except:
+                    try:
+                        await bot.send(ev, "直播间概要解析失败", at_sender=True)
+                    except CQHttpError:
+                        sv.logger.error(f"直播间概要解析失败消息无法发送")
+                        try:
+                            await bot.send(ev, "直播间概要解析失败", at_sender=True)
                         except:
                             pass
