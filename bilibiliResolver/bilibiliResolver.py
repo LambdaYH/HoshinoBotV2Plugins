@@ -93,16 +93,43 @@ async def getBilibiliBangumiDetail(resultUrl):
 
 @cached(ttl=60)
 async def getLiveSummary(resultUrl):
-    contents = await aiorequests.get(resultUrl, headers=headers, timeout=15)
-    soup = BeautifulSoup((await contents.text), "lxml")
-    summarys = str(html.unescape(soup.find(
-        'title', id="link-app-title").text)).split("-")[:2]
-    title = summarys[0].strip()
-    up = summarys[1].strip()
     link = re.search(r'(https|http)://live.bilibili.com/\d+', resultUrl)
+    roomid = ""
+    uid = ""
+    title = ""
+    up = ""
+    imgUrl = ""
+    status = ""
     if link:
         link = link.group()
-    msg = [f"[直播间]", f"[标题]{title}", f"[up]{up}", f"URL:{link}"]
+        roomid = re.search(r'\d+', link).group()
+    else:
+        raise "no link found"
+    
+    r = await aiorequests.get(
+        f"http://api.live.bilibili.com/room/v1/Room/room_init?id={roomid}")
+    r = await r.json()
+    if r['code'] == 0:
+        uid = r['data']['uid']
+    else:
+        return "↑ 直播间不存在~", link
+
+    r = await aiorequests.get(
+        f"http://api.bilibili.com/x/space/acc/info?mid={uid}")
+    r = await r.json()
+    if r['code'] == 0:
+        title = r['data']['live_room']['title']
+        up = r['data']['name']
+        imgUrl = r['data']['live_room']['cover']
+        status = r['data']['live_room']['liveStatus']
+        link = r['data']['live_room']['url']
+    else:
+        raise "cannot find the detail of this live room"
+
+    msg = [
+        "[直播中]" if status == 1 else "[未开播]", f"[标题]{title}", f"[主播]{up}",
+        f"[封面]{ms.image(imgUrl)}", f"URL:{link}"
+    ]
     return msg, link
 
 
@@ -126,6 +153,7 @@ async def bilibiliResolver(bot, ev: CQEvent):
         urlList = list(set(urlList))  #Initially delete repeated links
         linkSet = await get_linkSet(ev.group_id)  #avoid repeated link
         for url in urlList:
+            url = url.rstrip("&")  # delete Animated emoticons
             if url.startswith(video_keywords):
                 try:
                     try:
@@ -211,7 +239,7 @@ async def bilibiliResolver(bot, ev: CQEvent):
                             pass
                 except:
                     try:
-                        await bot.send(ev, "直播间概要解析失败", at_sender=True)
+                        await bot.send(ev, "↑ 这是一个直播间（虽然我不认识")
                     except CQHttpError:
                         sv.logger.error(f"直播间概要解析失败消息无法发送")
                         try:
