@@ -1,11 +1,10 @@
-# -*- coding: utf-8 -*-
 import re
 import html
 from bs4 import BeautifulSoup
 from aiocache import cached
 from nonebot import MessageSegment as ms
-from hoshino import util, Service, priv, aiorequests
-from hoshino.typing import CQEvent, CQHttpError, Message
+from hoshino import Service, priv, aiorequests
+from hoshino.typing import CQEvent, CQHttpError
 
 sv = Service('bilibiliResolver',
              manage_priv=priv.ADMIN,
@@ -81,7 +80,13 @@ async def getBilibiliBangumiDetail(resultUrl):
         "_bilibili_哔哩哔哩", "")).replace("_", "[") + "]"
     description = html.unescape(soup.find('span', class_="absolute").text)
     imgUrl = soup.find(attrs={"property": "og:image"})['content']
-    ep = re.search(r'(ss|ep)\d+', resultUrl).group()
+    try:
+        ep = re.search(r'(ss|ep)\d+', resultUrl).group()
+    except:
+        if resultUrl.startswith("https://b23.tv"):
+            ep = re.search(r'(ss|ep)\d+', await getUrl(resultUrl)).group()
+        else:
+            raise
     link = re.sub(r'(ss|ep)\d+', ep,
                   soup.find(attrs={"property": "og:url"})['content'])
     msg = [
@@ -105,7 +110,7 @@ async def getLiveSummary(resultUrl):
         roomid = re.search(r'\d+', link).group()
     else:
         raise "no link found"
-    
+
     r = await aiorequests.get(
         f"http://api.live.bilibili.com/room/v1/Room/room_init?id={roomid}")
     r = await r.json()
