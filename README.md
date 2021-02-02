@@ -6,8 +6,6 @@ List:<br>
   > 解析B站链接，支持番剧和直播和视频
 - [music](https://github.com/LambdaYH/HoshinoBotV2Plugins/tree/master/music)
   > modified from [mengshouer/HoshinoBot-Plugins](https://github.com/mengshouer/HoshinoBot-Plugins/blob/master/modules/custom/music.py), 点歌
-- [translate](https://github.com/LambdaYH/HoshinoBotV2Plugins/tree/master/translate)
-  > the translate plugin use googletrans instead of sougo
 - [suoxie](https://github.com/LambdaYH/HoshinoBotV2Plugins/tree/master/suoxie)
   > Semi-finished products, powered by [nbnhhsh](https://github.com/itorr/nbnhhsh)
 - [weather](https://github.com/LambdaYH/HoshinoBotV2Plugins/tree/master/weather)
