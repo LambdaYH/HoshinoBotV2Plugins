@@ -24,6 +24,7 @@ except FileNotFoundError:
         custom_reply["global"] = {}
     logger.warning("customReply.json not found, will create when needed.")
 
+
 @sv.on_message()
 async def migang_reply(bot, ev):
     msg = str(ev.message)
@@ -211,9 +212,7 @@ async def show_custom_reply(bot, ev):
         msg += "无\n"
     msg += "[全局自定义回复]\n"
     for key in custom_reply.get("global"):
-        msg += (
-            f"{html.unescape(key)}: {custom_reply.get('global')[key]['content']}\n"
-        )
+        msg += f"{html.unescape(key)}: {custom_reply.get('global')[key]['content']}\n"
 
     await bot.send(ev, MessageSegment.image(text2img(msg)))
 
@@ -225,6 +224,7 @@ async def saveCustomReply():
             logger.info("customReply has been saved")
     except FileNotFoundError:
         raise "customReply.json not found, will create when needed."
+
 
 @scheduler.scheduled_job("interval", seconds=600)
 async def saveData():
