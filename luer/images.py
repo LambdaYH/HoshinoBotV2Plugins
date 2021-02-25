@@ -1,6 +1,6 @@
 from . import ImageData
-from migang.typing import MessageSegment as ms
-from migang import R, Service
+from hoshino.typing import MessageSegment as ms
+from hoshino import R, Service
 
 DB_PATH = R.img("luer/imagedata.db").path
 Image_Data = ImageData(DB_PATH)

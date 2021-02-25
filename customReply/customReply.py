@@ -193,7 +193,6 @@ async def migang_reply_help(bot, ev):
 [Tips]
 图片请不要直接使用粘贴方式设定自定义回复，否则未来会失效，建议采用图床上传图片
 类似([CQ:image,file=https://image.cinte.cc/2021/01/24/886d904a65e51.png])
-如不嫌弃可以使用(https://image.cinte.cc/)作为图床
 (群自定义回复优先级高于维护者设定的全局自定义回复, 仅在群聊中可使用自定义回复)
 """.strip()
 
