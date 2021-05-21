@@ -13,4 +13,4 @@ List:<br>
 - [customReply](https://github.com/LambdaYH/HoshinoBotV2Plugins/tree/master/customReply)
   > 自定义回复，可单群设置和全局设置
 - [luer](https://github.com/LambdaYH/HoshinoBotV2Plugins/tree/master/luer)
-  > 云吸xxxxx
+  > 云吸xxxxx(ff14各种族)
