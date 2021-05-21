@@ -1,17 +1,21 @@
 import re
 import html
+import httpx
+import asyncio
 from bs4 import BeautifulSoup
 from aiocache import cached
 from nonebot import MessageSegment as ms
-from hoshino import Service, priv, aiorequests
+from hoshino import Service, priv
 from hoshino.typing import CQEvent, CQHttpError
+
+semaphore = asyncio.Semaphore(10)
 
 sv = Service(
     "bilibiliResolver", manage_priv=priv.ADMIN, enable_on_default=True, visible=False
 )
 
 headers = {
-    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.135 Safari/537.36"
+    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.141 Safari/537.36"
 }
 
 pattern = re.compile(
@@ -43,35 +47,56 @@ async def get_linkSet(group_id):
 # transfer b23.tv to bilibili.com
 @cached(ttl=60)
 async def getUrl(url):
-    res = await aiorequests.get(url, timeout=15)
-    return res.url
+    async with httpx.AsyncClient() as client:
+        res = await client.get(url, timeout=15)
+    return str(res.url)
+
+
+async def getContext(url):
+    async with semaphore:
+        async with httpx.AsyncClient() as client:
+            contents = await client.get(url, headers=headers, timeout=15)
+            return contents.text
+
+
+async def getJson(url):
+    async with semaphore:
+        async with httpx.AsyncClient() as client:
+            r = await client.get(url)
+            return r.json()
 
 
 @cached(ttl=60)
 async def getBilibiliVideoDetail(resultUrl):
-    contents = await aiorequests.get(resultUrl, headers=headers, timeout=15)
-    soup = BeautifulSoup((await contents.text), "lxml")
-    title = html.unescape(soup.find(attrs={"name": "title"})["content"]).replace(
-        "_哔哩哔哩 (゜-゜)つロ 干杯~-bilibili", ""
-    )
-    description = html.unescape(soup.find("div", class_="info open").text)
-    auther = html.unescape(soup.find(attrs={"name": "author"})["content"])
-    imgUrl = soup.find(attrs={"itemprop": "image"})["content"]
-    # get part details
     if resultUrl.startswith("https://b23.tv"):
-        part = re.search(r"\?p=\d+", await getUrl(resultUrl))
-    else:
-        part = re.search(r"\?p=\d+", resultUrl)
+        resultUrl = await getUrl(resultUrl)
+    aid = re.search(aid_pattern, resultUrl)
+    bvid = re.search(bvid_pattern, resultUrl)
+    url = ""
+    if aid:
+        url = f"https://api.bilibili.com/x/web-interface/view?aid={aid.group()[2:]}"
+    elif bvid:
+        url = url = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid.group()}"
+
+    details = await getJson(url)
+    if details["code"] != 0:
+        raise "cannot fetch video detail"
+    details = details["data"]
+    title = details["title"]
+    description = details["desc"]
+    auther = details["owner"]["name"]
+    imgUrl = details["pic"]
+    link = f"https://www.bilibili.com/video/{details['bvid']}"
+    # get part details
+    part = re.search(r"\?p=\d+", resultUrl)
     if part != None and part.group() != "?p=1":
         title += "[P" + part.group().replace("?p=", "") + "]"
-        link = soup.find(attrs={"itemprop": "url"})["content"][:-1] + part.group()
-    else:
-        link = soup.find(attrs={"itemprop": "url"})["content"]
+        link += part.group()
     msg = [
-        f"[标题]{title}",
-        f"[作者]{auther}",
-        f"[简介]{description}",
-        f"[封面]{ms.image(imgUrl)}",
+        f"[标题] {title}",
+        f"[作者] {auther}",
+        f"[简介] \n{description}" if description.strip() != "" else f"[简介] {description}",
+        f"[封面] {ms.image(imgUrl)}",
         f"URL:{link}",
     ]
     return msg, link
@@ -79,8 +104,8 @@ async def getBilibiliVideoDetail(resultUrl):
 
 @cached(ttl=60)
 async def getBilibiliBangumiDetail(resultUrl):
-    contents = await aiorequests.get(resultUrl, headers=headers, timeout=15)
-    soup = BeautifulSoup((await contents.text), "lxml")
+    text = await getContext(resultUrl)
+    soup = BeautifulSoup(text, "lxml")
     title = (
         html.unescape(soup.title.string.replace("_bilibili_哔哩哔哩", "")).replace("_", "[")
         + "]"
@@ -96,9 +121,9 @@ async def getBilibiliBangumiDetail(resultUrl):
             raise
     link = re.sub(r"(ss|ep)\d+", ep, soup.find(attrs={"property": "og:url"})["content"])
     msg = [
-        f"[标题]{title}",
-        f"[简介]{description}",
-        f"[封面]{ms.image(imgUrl)}",
+        f"[标题] {title}",
+        f"[简介] \n{description}" if description.strip() != "" else f"[简介] {description}",
+        f"[封面] {ms.image(imgUrl)}",
         f"URL:{link}",
     ]
     return msg, link
@@ -119,17 +144,14 @@ async def getLiveSummary(resultUrl):
     else:
         raise "no link found"
 
-    r = await aiorequests.get(
+    r = await getJson(
         f"http://api.live.bilibili.com/room/v1/Room/room_init?id={roomid}"
     )
-    r = await r.json()
     if r["code"] == 0:
         uid = r["data"]["uid"]
     else:
         return "↑ 直播间不存在~", link
-
-    r = await aiorequests.get(f"http://api.bilibili.com/x/space/acc/info?mid={uid}")
-    r = await r.json()
+    r = await getJson(f"http://api.bilibili.com/x/space/acc/info?mid={uid}")
     if r["code"] == 0:
         title = r["data"]["live_room"]["title"]
         up = r["data"]["name"]
@@ -137,16 +159,95 @@ async def getLiveSummary(resultUrl):
         status = r["data"]["live_room"]["liveStatus"]
         link = r["data"]["live_room"]["url"]
     else:
-        raise "cannot find the detail of this live room"
+        raise "cannot fetch the detail of this live room"
 
     msg = [
         "[直播中]" if status == 1 else "[未开播]",
-        f"[标题]{title}",
-        f"[主播]{up}",
+        f"[标题] {title}",
+        f"[主播] {up}",
         f"[封面]{ms.image(imgUrl)}",
         f"URL:{link}",
     ]
     return msg, link
+
+
+async def extractDetails(url, bot, ev, linkSet):
+    url = url.rstrip("&")  # delete Animated emoticons
+    if url.startswith(video_keywords):
+        try:
+            try:
+                msg, link = await getBilibiliVideoDetail(url)
+                msg = msg if link not in linkSet else None
+                linkSet.add(link)
+            except:
+                msg, link = await getBilibiliBangumiDetail(url)
+                msg = msg if link not in linkSet else None
+                linkSet.add(link)
+
+            try:
+                if msg != None:
+                    await bot.send(ev, "\n".join(msg))
+            except CQHttpError:
+                sv.logger.warning(f"解析消息发送失败")
+                try:
+                    await bot.send(ev, "由于风控等原因链接解析结果无法发送(如有误检测请忽略)", at_sender=True)
+                except:
+                    pass
+        except Exception as e:
+            try:
+                sv.logger.warning(f"解析失败: {e}")
+                await bot.send(ev, "B站内容解析失败(如有误检测请忽略)", at_sender=True)
+            except CQHttpError:
+                sv.logger.warning(f"B站内容解析失败消息无法发送")
+
+    elif url.startswith(bangumi_keywords):
+        try:
+            try:
+                msg, link = await getBilibiliBangumiDetail(url)
+                msg = msg if link not in linkSet else None
+                linkSet.add(link)
+            except:
+                msg, link = await getBilibiliVideoDetail(url)
+                msg = msg if link not in linkSet else None
+                linkSet.add(link)
+
+            try:
+                if msg != None:
+                    await bot.send(ev, "\n".join(msg))
+            except CQHttpError:
+                sv.logger.warning(f"解析消息发送失败")
+                try:
+                    await bot.send(ev, "由于风控等原因链接解析结果无法发送(如有误检测请忽略)", at_sender=True)
+                except:
+                    pass
+        except Exception as e:
+            try:
+                sv.logger.warning(f"解析失败: {e}")
+                await bot.send(ev, "B站内容解析失败(如有误检测请忽略)", at_sender=True)
+            except CQHttpError as e:
+                sv.logger.warning(f"B站内容解析失败消息无法发送")
+
+    elif url.startswith(live_keywords):
+        try:
+            msg, link = await getLiveSummary(url)
+            msg = msg if link not in linkSet else None
+            linkSet.add(link)
+
+            try:
+                if msg != None:
+                    await bot.send(ev, "\n".join(msg))
+            except CQHttpError:
+                sv.logger.warning(f"解析消息发送失败")
+                try:
+                    await bot.send(ev, "由于风控等原因链接解析结果无法发送(如有误检测请忽略)", at_sender=True)
+                except:
+                    pass
+        except Exception as e:
+            try:
+                sv.logger.warning(f"解析失败: {e}")
+                await bot.send(ev, "↑ 这是一个直播间（虽然我不认识")
+            except CQHttpError:
+                sv.logger.warning(f"直播间概要解析失败消息无法发送")
 
 
 @sv.on_message()
@@ -168,87 +269,8 @@ async def bilibiliResolver(bot, ev: CQEvent):
     if urlList != []:
         urlList = list(set(urlList))  # Initially delete repeated links
         linkSet = await get_linkSet(ev.group_id)  # avoid repeated link
-        for url in urlList:
-            url = url.rstrip("&")  # delete Animated emoticons
-            if url.startswith(video_keywords):
-                try:
-                    try:
-                        msg, link = await getBilibiliVideoDetail(url)
-                        msg = msg if link not in linkSet else None
-                        linkSet.add(link)
-                    except:
-                        msg, link = await getBilibiliBangumiDetail(url)
-                        msg = msg if link not in linkSet else None
-                        linkSet.add(link)
-
-                    try:
-                        if msg != None:
-                            await bot.send(ev, "\n".join(msg))
-                    except CQHttpError:
-                        sv.logger.error(f"解析消息发送失败")
-                        try:
-                            await bot.send(ev, "由于风控等原因链接解析结果无法发送", at_sender=True)
-                        except:
-                            pass
-                except:
-                    try:
-                        await bot.send(ev, "链接/av号/bv号内容解析失败", at_sender=True)
-                    except CQHttpError:
-                        sv.logger.error(f"链接/av号/bv号内容解析失败消息无法发送")
-                        try:
-                            await bot.send(ev, "链接/av号/bv号内容解析失败", at_sender=True)
-                        except:
-                            pass
-            elif url.startswith(bangumi_keywords):
-                try:
-                    try:
-                        msg, link = await getBilibiliBangumiDetail(url)
-                        msg = msg if link not in linkSet else None
-                        linkSet.add(link)
-                    except:
-                        msg, link = await getBilibiliVideoDetail(url)
-                        msg = msg if link not in linkSet else None
-                        linkSet.add(link)
-
-                    try:
-                        if msg != None:
-                            await bot.send(ev, "\n".join(msg))
-                    except CQHttpError:
-                        sv.logger.error(f"解析消息发送失败")
-                        try:
-                            await bot.send(ev, "由于风控等原因链接解析结果无法发送", at_sender=True)
-                        except:
-                            pass
-                except:
-                    try:
-                        await bot.send(ev, "链接/av号/bv号内容解析失败", at_sender=True)
-                    except CQHttpError:
-                        sv.logger.error(f"链接/av号/bv号内容解析失败消息无法发送")
-                        try:
-                            await bot.send(ev, "链接/av号/bv号内容解析失败", at_sender=True)
-                        except:
-                            pass
-            elif url.startswith(live_keywords):
-                try:
-                    msg, link = await getLiveSummary(url)
-                    msg = msg if link not in linkSet else None
-                    linkSet.add(link)
-
-                    try:
-                        if msg != None:
-                            await bot.send(ev, "\n".join(msg))
-                    except CQHttpError:
-                        sv.logger.error(f"解析消息发送失败")
-                        try:
-                            await bot.send(ev, "由于风控等原因链接解析结果无法发送", at_sender=True)
-                        except:
-                            pass
-                except:
-                    try:
-                        await bot.send(ev, "↑ 这是一个直播间（虽然我不认识")
-                    except CQHttpError:
-                        sv.logger.error(f"直播间概要解析失败消息无法发送")
-                        try:
-                            await bot.send(ev, "直播间概要解析失败", at_sender=True)
-                        except:
-                            pass
+        tasks = [
+            asyncio.create_task(extractDetails(url, bot, ev, linkSet))
+            for url in urlList
+        ]
+        await asyncio.gather(*tasks)
