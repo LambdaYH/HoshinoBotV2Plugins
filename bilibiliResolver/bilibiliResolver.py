@@ -24,10 +24,9 @@ pattern = re.compile(
 
 aid_pattern = re.compile(r"(av|AV)\d+")
 
-bvid_pattern = re.compile(r"(BV|bv)\w+")
+bvid_pattern = re.compile(r"(BV|bv)([a-zA-Z0-9])+")
 
 video_keywords = (
-    "https://b23.tv",
     "https://www.bilibili.com/video",
     "http://www.bilibili.com/video",
 )
@@ -68,15 +67,13 @@ async def getJson(url):
 
 @cached(ttl=60)
 async def getBilibiliVideoDetail(resultUrl):
-    if resultUrl.startswith("https://b23.tv"):
-        resultUrl = await getUrl(resultUrl)
     aid = re.search(aid_pattern, resultUrl)
     bvid = re.search(bvid_pattern, resultUrl)
     url = ""
     if aid:
         url = f"https://api.bilibili.com/x/web-interface/view?aid={aid.group()[2:]}"
     elif bvid:
-        url = url = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid.group()}"
+        url = f"https://api.bilibili.com/x/web-interface/view?bvid={bvid.group()}"
 
     details = await getJson(url)
     if details["code"] != 0:
@@ -112,13 +109,7 @@ async def getBilibiliBangumiDetail(resultUrl):
     )
     description = html.unescape(soup.find("span", class_="absolute").text)
     imgUrl = soup.find(attrs={"property": "og:image"})["content"]
-    try:
-        ep = re.search(r"(ss|ep)\d+", resultUrl).group()
-    except:
-        if resultUrl.startswith("https://b23.tv"):
-            ep = re.search(r"(ss|ep)\d+", await getUrl(resultUrl)).group()
-        else:
-            raise
+    ep = re.search(r"(ss|ep)\d+", resultUrl).group()
     link = re.sub(r"(ss|ep)\d+", ep, soup.find(attrs={"property": "og:url"})["content"])
     msg = [
         f"[标题] {title}",
@@ -175,18 +166,13 @@ async def extractDetails(url, bot, ev, linkSet):
     url = url.rstrip("&")  # delete Animated emoticons
     if url.startswith(video_keywords):
         try:
-            try:
-                msg, link = await getBilibiliVideoDetail(url)
-                msg = msg if link not in linkSet else None
-                linkSet.add(link)
-            except:
-                msg, link = await getBilibiliBangumiDetail(url)
-                msg = msg if link not in linkSet else None
-                linkSet.add(link)
+            msg, link = await getBilibiliVideoDetail(url)
+            msg = msg if link not in linkSet else None
 
             try:
                 if msg != None:
                     await bot.send(ev, "\n".join(msg))
+                    linkSet.add(link)
             except CQHttpError:
                 sv.logger.warning(f"解析消息发送失败")
                 try:
@@ -202,18 +188,13 @@ async def extractDetails(url, bot, ev, linkSet):
 
     elif url.startswith(bangumi_keywords):
         try:
-            try:
-                msg, link = await getBilibiliBangumiDetail(url)
-                msg = msg if link not in linkSet else None
-                linkSet.add(link)
-            except:
-                msg, link = await getBilibiliVideoDetail(url)
-                msg = msg if link not in linkSet else None
-                linkSet.add(link)
+            msg, link = await getBilibiliBangumiDetail(url)
+            msg = msg if link not in linkSet else None
 
             try:
                 if msg != None:
                     await bot.send(ev, "\n".join(msg))
+                    linkSet.add(link)
             except CQHttpError:
                 sv.logger.warning(f"解析消息发送失败")
                 try:
@@ -231,11 +212,11 @@ async def extractDetails(url, bot, ev, linkSet):
         try:
             msg, link = await getLiveSummary(url)
             msg = msg if link not in linkSet else None
-            linkSet.add(link)
 
             try:
                 if msg != None:
                     await bot.send(ev, "\n".join(msg))
+                    linkSet.add(link)
             except CQHttpError:
                 sv.logger.warning(f"解析消息发送失败")
                 try:
@@ -268,6 +249,9 @@ async def bilibiliResolver(bot, ev: CQEvent):
 
     if urlList != []:
         urlList = list(set(urlList))  # Initially delete repeated links
+        for i in range(len(urlList)):
+            if urlList[i].startswith("https://b23.tv"):
+                urlList[i] = await getUrl(urlList[i])
         linkSet = await get_linkSet(ev.group_id)  # avoid repeated link
         tasks = [
             asyncio.create_task(extractDetails(url, bot, ev, linkSet))
