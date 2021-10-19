@@ -1,0 +1,2 @@
+httpx==0.20.0
+beautifulsoup4==4.9.3
