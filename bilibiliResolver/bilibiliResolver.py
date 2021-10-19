@@ -48,7 +48,7 @@ async def get_linkSet(group_id):
 @cached(ttl=60)
 async def getUrl(url):
     async with httpx.AsyncClient() as client:
-        res = await client.get(url, timeout=15)
+        res = await client.get(url, timeout=15, follow_redirects=True)
     return str(res.url)
 
 
